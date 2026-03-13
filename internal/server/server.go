@@ -45,7 +45,7 @@ func New(store *metalogs.Store, cfg Config) *Server {
 
 	s.http = &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      withLogging(mux),
+		Handler:      withCORS(withLogging(store)(mux)),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 30 * time.Second,
 	}
@@ -56,14 +56,28 @@ func New(store *metalogs.Store, cfg Config) *Server {
 // Start begins listening and starts the background cleanup goroutine.
 func (s *Server) Start() error {
 	go s.cleanupLoop()
-	log.Printf("metalogs server listening on :%d (cleanup TTL: %s)", s.config.Port, s.config.CleanupTTL)
+	msg := fmt.Sprintf("server started on :%d (cleanup TTL: %s)", s.config.Port, s.config.CleanupTTL)
+	log.Print(msg)
+	s.selfLog(metalogs.LevelInfo, msg)
 	return s.http.ListenAndServe()
 }
 
 // Shutdown gracefully stops the server and cleanup goroutine.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.selfLog(metalogs.LevelInfo, "server shutting down")
 	close(s.stop)
 	return s.http.Shutdown(ctx)
+}
+
+func (s *Server) selfLog(level metalogs.LogLevel, message string) {
+	source := "metalogs/server"
+	s.store.Ingest(metalogs.LogEntry{
+		Site:    "metalogs",
+		Layer:   "server",
+		Level:   level,
+		Message: message,
+		Source:  &source,
+	})
 }
 
 func (s *Server) cleanupLoop() {
@@ -74,9 +88,13 @@ func (s *Server) cleanupLoop() {
 		case <-ticker.C:
 			deleted, err := s.store.Cleanup(s.config.CleanupTTL)
 			if err != nil {
-				log.Printf("cleanup error: %v", err)
+				msg := fmt.Sprintf("cleanup error: %v", err)
+				log.Print(msg)
+				s.selfLog(metalogs.LevelError, msg)
 			} else if deleted > 0 {
-				log.Printf("cleanup: deleted %d old logs", deleted)
+				msg := fmt.Sprintf("cleanup: deleted %d old logs", deleted)
+				log.Print(msg)
+				s.selfLog(metalogs.LevelInfo, msg)
 			}
 		case <-s.stop:
 			return
