@@ -91,12 +91,16 @@ func runQuery(cmd *cobra.Command, args []string) error {
 	}
 
 	for _, e := range results {
-		ts := e.Timestamp.Format("2006-01-02 15:04:05")
+		ts := e.Timestamp.Local().Format("2006-01-02 15:04:05")
 		src := ""
 		if e.Source != nil {
 			src = " [" + *e.Source + "]"
 		}
-		fmt.Printf("%s  %-5s  %-16s %-10s  %s%s\n", ts, strings.ToUpper(string(e.Level)), e.Site, e.Layer, e.Message, src)
+		origin := e.ShortName
+		if origin == "" {
+			origin = e.Site + "/" + e.Layer
+		}
+		fmt.Printf("%s  %-5s  %-12s  %s%s\n", ts, strings.ToUpper(string(e.Level)), origin, e.Message, src)
 		if e.Details != nil {
 			fmt.Printf("         details: %s\n", *e.Details)
 		}

@@ -91,11 +91,11 @@ func (s *Store) Query(opts QueryOpts) ([]LogEntry, error) {
 		args = append(args, "%"+opts.Contains+"%")
 	}
 
-	q := "SELECT id, site, layer, level, message, details, source, timestamp, metadata FROM logs"
+	q := "SELECT id, site, layer, short_name, level, message, details, source, timestamp, metadata FROM logs"
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
-	q += " ORDER BY timestamp DESC"
+	q += " ORDER BY timestamp ASC"
 
 	limit := opts.Limit
 	if limit <= 0 {
@@ -121,7 +121,7 @@ func (s *Store) Query(opts QueryOpts) ([]LogEntry, error) {
 		var e LogEntry
 		var ts string
 		var meta *string
-		if err := rows.Scan(&e.ID, &e.Site, &e.Layer, &e.Level, &e.Message, &e.Details, &e.Source, &ts, &meta); err != nil {
+		if err := rows.Scan(&e.ID, &e.Site, &e.Layer, &e.ShortName, &e.Level, &e.Message, &e.Details, &e.Source, &ts, &meta); err != nil {
 			return nil, err
 		}
 		e.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)

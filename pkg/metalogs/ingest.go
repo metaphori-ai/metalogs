@@ -6,20 +6,40 @@ import (
 	"time"
 )
 
-const insertSQL = `INSERT INTO logs (site, layer, level, message, details, source, timestamp, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+const insertSQL = `INSERT INTO logs (site, layer, short_name, level, message, details, source, timestamp, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 func normalize(entry *LogEntry) {
 	entry.Site = strings.ToLower(entry.Site)
 	entry.Layer = strings.ToLower(entry.Layer)
+	entry.ShortName = strings.ToLower(entry.ShortName)
 	entry.Level = LogLevel(strings.ToLower(string(entry.Level)))
 	if entry.Timestamp.IsZero() {
 		entry.Timestamp = time.Now().UTC()
+	} else {
+		entry.Timestamp = entry.Timestamp.UTC()
 	}
+}
+
+// parseCollections splits a comma-separated collections string into a slice.
+func parseCollections(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var result []string
+	for _, c := range strings.Split(s, ",") {
+		c = strings.TrimSpace(strings.ToLower(c))
+		if c != "" {
+			result = append(result, c)
+		}
+	}
+	return result
 }
 
 // Ingest queues a single log entry for writing.
 // This is non-blocking — entries are flushed in batches by a background goroutine.
-// Site, layer, and level are normalized to lowercase.
+// Site, layer, short_name, and level are normalized to lowercase.
+// If Collections is set (comma-separated), the site+layer pair is auto-registered
+// into each named collection.
 func (s *Store) Ingest(entry LogEntry) error {
 	normalize(&entry)
 	select {

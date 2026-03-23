@@ -25,12 +25,17 @@ const (
 // In HTTP mode, writes are forwarded to a metalogs server
 // while reads go directly to SQLite.
 type Store struct {
-	db       *sql.DB
-	buf      chan LogEntry
-	stop     chan struct{}
-	wg       sync.WaitGroup
-	httpURL  string       // non-empty = HTTP ingest mode
+	db         *sql.DB
+	buf        chan LogEntry
+	stop       chan struct{}
+	wg         sync.WaitGroup
+	httpURL    string // non-empty = HTTP ingest mode
 	httpClient *http.Client
+
+	// collCache tracks which (collection, site, layer) tuples have already
+	// been registered, so we skip redundant INSERT OR IGNORE on every flush.
+	collMu    sync.Mutex
+	collCache map[string]struct{}
 }
 
 // DefaultDBPath returns ~/.metalogs/metalogs.db.
@@ -53,9 +58,10 @@ func NewStore(dbPath string) (*Store, error) {
 	}
 
 	s := &Store{
-		db:   db,
-		buf:  make(chan LogEntry, ingestBufferSize),
-		stop: make(chan struct{}),
+		db:        db,
+		buf:       make(chan LogEntry, ingestBufferSize),
+		stop:      make(chan struct{}),
+		collCache: make(map[string]struct{}),
 	}
 
 	s.wg.Add(1)
@@ -84,6 +90,7 @@ func NewHTTPClient(serverURL string, dbPath string) (*Store, error) {
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
+		collCache: make(map[string]struct{}),
 	}
 
 	s.wg.Add(1)
@@ -217,6 +224,10 @@ func (s *Store) writeBatch(entries []LogEntry) error {
 	}
 	defer stmt.Close()
 
+	// Collect collection registrations needed from this batch.
+	type collKey struct{ coll, site, layer string }
+	var newColls []collKey
+
 	for i := range entries {
 		e := &entries[i]
 		var meta *string
@@ -225,14 +236,40 @@ func (s *Store) writeBatch(entries []LogEntry) error {
 			meta = &m
 		}
 		if _, err := stmt.Exec(
-			e.Site, e.Layer, string(e.Level), e.Message,
+			e.Site, e.Layer, e.ShortName, string(e.Level), e.Message,
 			e.Details, e.Source,
 			e.Timestamp.Format(time.RFC3339Nano),
 			meta,
 		); err != nil {
 			return err
 		}
+
+		// Track collection memberships to register.
+		for _, coll := range parseCollections(e.Collections) {
+			key := coll + "\x00" + e.Site + "\x00" + e.Layer
+			s.collMu.Lock()
+			_, seen := s.collCache[key]
+			if !seen {
+				s.collCache[key] = struct{}{}
+			}
+			s.collMu.Unlock()
+			if !seen {
+				newColls = append(newColls, collKey{coll, e.Site, e.Layer})
+			}
+		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// Register new collection memberships outside the log-insert transaction.
+	if len(newColls) > 0 {
+		for _, ck := range newColls {
+			s.db.Exec("INSERT OR IGNORE INTO collections (name, site, layer) VALUES (?, ?, ?)",
+				ck.coll, ck.site, ck.layer)
+		}
+	}
+
+	return nil
 }

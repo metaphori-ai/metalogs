@@ -13,6 +13,11 @@ import (
 type responseWriter struct {
 	http.ResponseWriter
 	status int
+	// Ingest metadata for enriched logging
+	ingestSite  string
+	ingestLayer string
+	ingestLevel string
+	ingestCount int
 }
 
 func (rw *responseWriter) WriteHeader(code int) {
@@ -27,7 +32,21 @@ func withLogging(store *metalogs.Store) func(http.Handler) http.Handler {
 			rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rw, r)
 			dur := time.Since(start).Round(time.Microsecond)
-			log.Printf("%s %s %d %s", r.Method, r.URL.Path, rw.status, dur)
+			if rw.ingestSite != "" {
+				meta := rw.ingestSite
+				if rw.ingestLayer != "" {
+					meta += ":" + rw.ingestLayer
+				}
+				if rw.ingestLevel != "" {
+					meta += " " + rw.ingestLevel
+				}
+				if rw.ingestCount > 1 {
+					meta += fmt.Sprintf(" (%d)", rw.ingestCount)
+				}
+				log.Printf("%s %s %d %s %s", r.Method, r.URL.Path, rw.status, meta, dur)
+			} else {
+				log.Printf("%s %s %d %s", r.Method, r.URL.Path, rw.status, dur)
+			}
 
 			// Self-log to metalogs — skip ingest paths to avoid infinite recursion
 			if strings.HasPrefix(r.URL.Path, "/ingest") {

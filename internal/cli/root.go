@@ -21,6 +21,7 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(queryCmd)
 	rootCmd.AddCommand(cleanupCmd)
+	rootCmd.AddCommand(wipeCmd)
 	rootCmd.AddCommand(sitesCmd)
 	rootCmd.AddCommand(collectionsCmd)
 }

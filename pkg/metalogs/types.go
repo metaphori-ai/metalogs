@@ -27,15 +27,17 @@ func ValidLevel(l LogLevel) bool {
 
 // LogEntry represents a single log record.
 type LogEntry struct {
-	ID        int64            `json:"id,omitempty"`
-	Site      string           `json:"site"`
-	Layer     string           `json:"layer"`
-	Level     LogLevel         `json:"level"`
-	Message   string           `json:"message"`
-	Details   *string          `json:"details,omitempty"`
-	Source    *string          `json:"source,omitempty"`
-	Timestamp time.Time        `json:"timestamp"`
-	Metadata  *json.RawMessage `json:"metadata,omitempty"`
+	ID          int64            `json:"id,omitempty"`
+	Site        string           `json:"site"`
+	Layer       string           `json:"layer"`
+	ShortName   string           `json:"short_name,omitempty"`
+	Collections string           `json:"collections,omitempty"` // comma-separated, ingest-only (not stored per log)
+	Level       LogLevel         `json:"level"`
+	Message     string           `json:"message"`
+	Details     *string          `json:"details,omitempty"`
+	Source      *string          `json:"source,omitempty"`
+	Timestamp   time.Time        `json:"timestamp"`
+	Metadata    *json.RawMessage `json:"metadata,omitempty"`
 }
 
 // QueryOpts defines filters for querying logs.

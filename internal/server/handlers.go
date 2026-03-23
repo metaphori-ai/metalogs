@@ -20,6 +20,11 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	if rw, ok := w.(*responseWriter); ok {
+		rw.ingestSite = entry.Site
+		rw.ingestLayer = entry.Layer
+		rw.ingestLevel = string(entry.Level)
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
 }
 
@@ -32,6 +37,14 @@ func (s *Server) handleIngestBatch(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.IngestBatch(entries); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if rw, ok := w.(*responseWriter); ok {
+		rw.ingestCount = len(entries)
+		if len(entries) > 0 {
+			rw.ingestSite = entries[0].Site
+			rw.ingestLayer = entries[0].Layer
+			rw.ingestLevel = highestLevel(entries)
+		}
 	}
 	writeJSON(w, http.StatusCreated, map[string]int{"ingested": len(entries)})
 }
@@ -172,6 +185,24 @@ func (s *Server) handleDeleteCollection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// highestLevel returns the most severe log level from a batch.
+func highestLevel(entries []metalogs.LogEntry) string {
+	order := map[metalogs.LogLevel]int{
+		metalogs.LevelDebug: 0,
+		metalogs.LevelInfo:  1,
+		metalogs.LevelWarn:  2,
+		metalogs.LevelError: 3,
+		metalogs.LevelFatal: 4,
+	}
+	best := entries[0].Level
+	for _, e := range entries[1:] {
+		if order[e.Level] > order[best] {
+			best = e.Level
+		}
+	}
+	return string(best)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
